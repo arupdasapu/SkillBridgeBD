@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Building, Mail, Lock, Eye, EyeOff, ArrowLeft, BookOpen, Shield } from 'lucide-react';
+import { supabase } from '../supabase/supabaseClient';
 
 const UniversityLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -8,25 +9,104 @@ const UniversityLogin = () => {
     institutionEmail: '',
     password: '',
     department: '',
-    rememberMe: false
+    rememberMe: false,
   });
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  // Clear any existing session on mount and load remembered email
+  useEffect(() => {
+    const clearSession = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.auth.signOut();
+        localStorage.removeItem('studentEmail');
+        localStorage.removeItem('universityEmail');
+      }
+      // Load remembered email
+      const rememberedEmail = localStorage.getItem('universityEmail');
+      if (rememberedEmail) {
+        setFormData((prev) => ({ ...prev, institutionEmail: rememberedEmail, rememberMe: true }));
+      }
+    };
+    clearSession();
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     const checked = type === 'checkbox' ? (e.target as HTMLInputElement).checked : false;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === 'checkbox' ? checked : value,
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle university login logic here
-    console.log('University login:', formData);
-    // Navigate to university dashboard
-    navigate('/dashboard/university');
+    setError(null);
+    setLoading(true);
+
+    try {
+      // Attempt login
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: formData.institutionEmail,
+        password: formData.password,
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('No user found after login.');
+
+      // Verify user is a university user (has a profile in university_profiles)
+      const { data: profileData, error: profileError } = await supabase
+        .from('university_profiles')
+        .select('department, university')
+        .eq('user_id', authData.user.id)
+        .single();
+
+      if (profileError || !profileData) {
+        await supabase.auth.signOut();
+        throw new Error('This account is not registered as a university user. Please use the student login if applicable.');
+      }
+
+      if (profileData.department !== formData.department) {
+        await supabase.auth.signOut();
+        throw new Error('Selected department does not match your profile.');
+      }
+
+      // Check if user is also in profiles (prevent cross-type login)
+      const { data: studentProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (studentProfile) {
+        await supabase.auth.signOut();
+        throw new Error('This account is registered as a student. Please use the student login page.');
+      }
+
+      // Handle "Remember Me"
+      if (formData.rememberMe) {
+        localStorage.setItem('universityEmail', formData.institutionEmail);
+      } else {
+        localStorage.removeItem('universityEmail');
+      }
+
+      console.log('University login successful:', {
+        email: formData.institutionEmail,
+        department: formData.department,
+        university: profileData.university,
+        userId: authData.user.id,
+      });
+
+      navigate('/dashboard/university');
+    } catch (err: any) {
+      setError(err.message || 'Failed to log in. Please check your credentials.');
+      console.error('University login error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -54,6 +134,13 @@ const UniversityLogin = () => {
 
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-50 text-red-700 p-3 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
+
             {/* Institution Email Field */}
             <div>
               <label htmlFor="institutionEmail" className="sr-only">
@@ -73,6 +160,7 @@ const UniversityLogin = () => {
                   onChange={handleInputChange}
                   className="appearance-none rounded-xl relative block w-full pl-10 pr-3 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-colors"
                   placeholder="Institution email address"
+                  disabled={loading}
                 />
               </div>
             </div>
@@ -93,6 +181,7 @@ const UniversityLogin = () => {
                   value={formData.department}
                   onChange={handleInputChange}
                   className="appearance-none rounded-xl relative block w-full pl-10 pr-8 py-3 border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-colors bg-white"
+                  disabled={loading}
                 >
                   <option value="">Select Department</option>
                   <option value="administration">Administration</option>
@@ -125,11 +214,13 @@ const UniversityLogin = () => {
                   onChange={handleInputChange}
                   className="appearance-none rounded-xl relative block w-full pl-10 pr-12 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-colors"
                   placeholder="Password"
+                  disabled={loading}
                 />
                 <button
                   type="button"
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
                   onClick={() => setShowPassword(!showPassword)}
+                  disabled={loading}
                 >
                   {showPassword ? (
                     <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
@@ -150,15 +241,19 @@ const UniversityLogin = () => {
                   checked={formData.rememberMe}
                   onChange={handleInputChange}
                   className="h-4 w-4 text-teal-600 focus:ring-teal-500 border-gray-300 rounded"
+                  disabled={loading}
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
                   Remember me
                 </label>
               </div>
               <div className="text-sm">
-                <a href="#" className="font-medium text-teal-600 hover:text-teal-500">
+                <Link
+                  to="/forgot-password"
+                  className="font-medium text-teal-600 hover:text-teal-500"
+                >
                   Forgot password?
-                </a>
+                </Link>
               </div>
             </div>
 
@@ -166,9 +261,10 @@ const UniversityLogin = () => {
             <div>
               <button
                 type="submit"
-                className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-xl text-white bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200 transform hover:scale-[1.02]"
+                className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-xl text-white bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200 transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
               >
-                Access University Portal
+                {loading ? 'Signing in...' : 'Access University Portal'}
               </button>
             </div>
 
@@ -176,9 +272,12 @@ const UniversityLogin = () => {
             <div className="text-center">
               <p className="text-sm text-gray-600">
                 Need institutional access?{' '}
-                <a href="#" className="font-medium text-teal-600 hover:text-teal-500">
+                <Link
+                  to="/signup/university"
+                  className="font-medium text-teal-600 hover:text-teal-500"
+                >
                   Contact our partnership team
-                </a>
+                </Link>
               </p>
             </div>
           </form>

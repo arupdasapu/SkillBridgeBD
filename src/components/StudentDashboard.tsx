@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Mail } from 'lucide-react';
 import { 
   User, 
   BookOpen, 
@@ -7,25 +9,162 @@ import {
   Bell, 
   Star, 
   TrendingUp, 
-  Award, 
   MessageSquare, 
   Search,
-  Settings,
   LogOut,
   Plus,
-  Filter,
-  ExternalLink,
   Clock,
   MapPin,
   Building,
   ChevronRight,
   Moon,
-  Sun
+  Sun,
+  School,
+  Book,
+  Calculator
 } from 'lucide-react';
+import { supabase } from '../supabase/supabaseClient';
 
 const StudentDashboard = () => {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const [username, setUsername] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
+  const [department, setDepartment] = useState<string | null>(null);
+  const [university, setUniversity] = useState<string | null>(null);
+  const [cgpa, setCgpa] = useState<number | null>(null);
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    department: '',
+    university: '',
+    cgpa: '',
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  const departments = [
+    'Computer Science and Engineering',
+    'Software Engineering',
+    'Multimedia and Creative Technology',
+  ];
+  const universities = ['Daffodil International University', 'Dhaka University'];
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+          setError('No user is logged in.');
+          navigate('/login/student');
+          return;
+        }
+
+        const { data, error: profileError } = await supabase
+          .from('profiles')
+          .select('username, email, department, university, cgpa')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError) {
+          console.error('Profile error:', profileError);
+          setError('Profile not found. Please complete your profile.');
+          setUsername(user.email ?? null);
+          setEmail(user.email ?? null);
+        } else if (data) {
+          setUsername(data.username);
+          setEmail(data.email);
+          setDepartment(data.department);
+          setUniversity(data.university);
+          setCgpa(data.cgpa);
+          setFormData({
+            username: data.username || '',
+            email: data.email || '',
+            department: data.department || '',
+            university: data.university || '',
+            cgpa: data.cgpa !== null ? data.cgpa.toString() : '',
+          });
+        }
+      } catch (err) {
+        setError('Failed to fetch user data.');
+        console.error('Error fetching user data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, [navigate]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleUpdateProfile = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const cgpaValue = parseFloat(formData.cgpa);
+      if (formData.cgpa && (isNaN(cgpaValue) || cgpaValue < 0 || cgpaValue > 4)) {
+        throw new Error('CGPA must be between 0.0 and 4.0.');
+      }
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          username: formData.username,
+          email: formData.email,
+          department: formData.department || null,
+          university: formData.university || null,
+          cgpa: formData.cgpa ? cgpaValue : null,
+        })
+        .eq('id', (await supabase.auth.getUser()).data.user!.id);
+
+      if (profileError) throw profileError;
+
+      // Update auth user email if changed
+      if (formData.email !== email) {
+        const { error: authError } = await supabase.auth.updateUser({ email: formData.email });
+        if (authError) throw authError;
+      }
+
+      setUsername(formData.username);
+      setEmail(formData.email);
+      setDepartment(formData.department);
+      setUniversity(formData.university);
+      setCgpa(formData.cgpa ? cgpaValue : null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to update profile.');
+      console.error('Update error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setFormData({
+      username: username || '',
+      email: email || '',
+      department: department || '',
+      university: university || '',
+      cgpa: cgpa !== null ? cgpa.toString() : '',
+    });
+    setError(null);
+  };
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      navigate('/login/student');
+    } catch (err) {
+      setError('Failed to log out. Please try again.');
+      console.error('Logout error:', err);
+    }
+  };
 
   const toggleTheme = () => {
     setIsDarkMode(!isDarkMode);
@@ -37,6 +176,19 @@ const StudentDashboard = () => {
 
   return (
     <div className={`min-h-screen ${themeClasses} transition-colors duration-300`}>
+      {/* Error Alert */}
+      {error && (
+        <div className="fixed top-4 right-4 bg-red-500 text-white p-4 rounded-lg shadow-lg z-50">
+          {error}
+          <button
+            className="ml-4 text-white hover:text-gray-200"
+            onClick={() => setError(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Top Navigation */}
       <nav className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/80 border-gray-200'} backdrop-blur-md border-b sticky top-0 z-50 transition-colors duration-300`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -84,7 +236,11 @@ const StudentDashboard = () => {
                 <Bell className="w-5 h-5" />
                 <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
               </button>
-              <button className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+              <button 
+                onClick={handleLogout}
+                className={`p-2 rounded-lg ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} transition-colors`}
+                disabled={loading}
+              >
                 <LogOut className="w-5 h-5" />
               </button>
             </div>
@@ -95,15 +251,15 @@ const StudentDashboard = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'overview' && (
           <>
-            {/* Welcome Section */}
             <div className="mb-8">
-              <h1 className="text-3xl font-bold mb-2">Welcome back, Alex!</h1>
+              <h1 className="text-3xl font-bold mb-2">
+                {loading ? 'Loading...' : error ? 'Welcome back!' : `Welcome back, ${username || 'Student'}!`}
+              </h1>
               <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                 Ready to take the next step in your career journey?
               </p>
             </div>
 
-            {/* Quick Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
               <div className={`${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 shadow-lg`}>
                 <div className="flex items-center justify-between">
@@ -144,9 +300,7 @@ const StudentDashboard = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Main Content */}
               <div className="lg:col-span-2 space-y-8">
-                {/* AI Recommendations */}
                 <div className={`${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 shadow-lg`}>
                   <div className="flex items-center justify-between mb-6">
                     <h2 className="text-xl font-bold">AI-Recommended Opportunities</h2>
@@ -220,7 +374,6 @@ const StudentDashboard = () => {
                   </div>
                 </div>
 
-                {/* Application Status */}
                 <div className={`${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 shadow-lg`}>
                   <h2 className="text-xl font-bold mb-6">Application Status</h2>
                   <div className="space-y-4">
@@ -247,17 +400,17 @@ const StudentDashboard = () => {
                 </div>
               </div>
 
-              {/* Sidebar */}
               <div className="space-y-6">
-                {/* Profile Summary */}
                 <div className={`${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 shadow-lg`}>
                   <div className="flex items-center space-x-4 mb-4">
                     <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
                       <User className="w-8 h-8 text-white" />
                     </div>
                     <div>
-                      <h3 className="font-bold">Alex Johnson</h3>
-                      <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Computer Science Student</p>
+                      <h3 className="font-bold">{username || 'Student'}</h3>
+                      <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {department || 'Department'} at {university || 'University'}
+                      </p>
                     </div>
                   </div>
                   <div className="space-y-3">
@@ -277,7 +430,6 @@ const StudentDashboard = () => {
                   </div>
                 </div>
 
-                {/* Upcoming Events */}
                 <div className={`${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 shadow-lg`}>
                   <h3 className="font-bold mb-4">Upcoming Events</h3>
                   <div className="space-y-3">
@@ -294,7 +446,6 @@ const StudentDashboard = () => {
                   </div>
                 </div>
 
-                {/* Quick Actions */}
                 <div className={`${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 shadow-lg`}>
                   <h3 className="font-bold mb-4">Quick Actions</h3>
                   <div className="space-y-2">
@@ -315,7 +466,6 @@ const StudentDashboard = () => {
               </div>
             </div>
 
-            {/* CTA Section */}
             <div className="mt-8 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-8 text-white text-center">
               <h2 className="text-2xl font-bold mb-4">Ready to Explore More Opportunities?</h2>
               <p className="mb-6 opacity-90">Discover internships, research projects, and career opportunities tailored just for you.</p>
@@ -336,19 +486,98 @@ const StudentDashboard = () => {
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium mb-2">Full Name</label>
-                      <input type="text" value="Alex Johnson" className={`w-full p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`} />
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <User className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <input 
+                          type="text" 
+                          name="username"
+                          value={formData.username} 
+                          onChange={handleInputChange}
+                          className={`w-full p-3 pl-10 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} ${loading ? 'opacity-50' : ''}`} 
+                          disabled={loading}
+                        />
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-2">Email</label>
-                      <input type="email" value="alex.johnson@university.edu" className={`w-full p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`} />
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Mail className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <input 
+                          type="email" 
+                          name="email"
+                          value={formData.email} 
+                          onChange={handleInputChange}
+                          className={`w-full p-3 pl-10 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} ${loading ? 'opacity-50' : ''}`} 
+                          disabled={loading}
+                        />
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-2">University</label>
-                      <input type="text" value="Stanford University" className={`w-full p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`} />
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <School className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <select
+                          name="university"
+                          value={formData.university}
+                          onChange={handleInputChange}
+                          className={`w-full p-3 pl-10 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} ${loading ? 'opacity-50' : ''}`}
+                          disabled={loading}
+                        >
+                          <option value="">Select University</option>
+                          {universities.map((uni) => (
+                            <option key={uni} value={uni}>
+                              {uni}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-2">Major</label>
-                      <input type="text" value="Computer Science" className={`w-full p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`} />
+                      <label className="block text-sm font-medium mb-2">Department</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Book className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <select
+                          name="department"
+                          value={formData.department}
+                          onChange={handleInputChange}
+                          className={`w-full p-3 pl-10 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} ${loading ? 'opacity-50' : ''}`}
+                          disabled={loading}
+                        >
+                          <option value="">Select Department</option>
+                          {departments.map((dept) => (
+                            <option key={dept} value={dept}>
+                              {dept}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">CGPA</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Calculator className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <input 
+                          type="number" 
+                          name="cgpa"
+                          step="0.01"
+                          min="0"
+                          max="4"
+                          value={formData.cgpa} 
+                          onChange={handleInputChange}
+                          className={`w-full p-3 pl-10 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} ${loading ? 'opacity-50' : ''}`} 
+                          disabled={loading}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -365,7 +594,12 @@ const StudentDashboard = () => {
                           </span>
                         ))}
                       </div>
-                      <input type="text" placeholder="Add new skill..." className={`w-full p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`} />
+                      <input 
+                        type="text" 
+                        placeholder="Add new skill..." 
+                        className={`w-full p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} ${loading ? 'opacity-50' : ''}`} 
+                        disabled={loading}
+                      />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-2">Career Interests</label>
@@ -377,16 +611,29 @@ const StudentDashboard = () => {
                           </span>
                         ))}
                       </div>
-                      <input type="text" placeholder="Add career interest..." className={`w-full p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`} />
+                      <input 
+                        type="text" 
+                        placeholder="Add career interest..." 
+                        className={`w-full p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} ${loading ? 'opacity-50' : ''}`} 
+                        disabled={loading}
+                      />
                     </div>
                   </div>
                 </div>
               </div>
               <div className="mt-8 flex justify-end space-x-4">
-                <button className={`px-6 py-2 rounded-lg border ${isDarkMode ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-50'} transition-colors`}>
+                <button 
+                  onClick={handleCancel}
+                  className={`px-6 py-2 rounded-lg border ${isDarkMode ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-50'} transition-colors ${loading ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                  disabled={loading}
+                >
                   Cancel
                 </button>
-                <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                <button 
+                  onClick={handleUpdateProfile}
+                  className={`px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors ${loading ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                  disabled={loading}
+                >
                   Save Changes
                 </button>
               </div>

@@ -8,6 +8,7 @@ import IndustryLogin from './components/IndustryLogin';
 import StudentDashboard from './components/StudentDashboard';
 import IndustryDashboard from './components/IndustryDashboard';
 import UniversityDashboard from './components/UniversityDashboard';
+import StudentSignup from './components/StudentSignup';
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/select-user-type" element={<UserTypeSelection />} />
           <Route path="/login/student" element={<StudentLogin />} />
+          <Route path="/signup/student" element={<StudentSignup />} />
           <Route path="/login/university" element={<UniversityLogin />} />
           <Route path="/login/industry" element={<IndustryLogin />} />
           <Route path="/dashboard/student" element={<StudentDashboard />} />

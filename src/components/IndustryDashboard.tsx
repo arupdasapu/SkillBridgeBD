@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Building, 
   Users, 
@@ -26,10 +27,89 @@ import {
   ChevronRight,
   BarChart3
 } from 'lucide-react';
+import { supabase } from '../supabase/supabaseClient';
+
+interface StudentProfile {
+  id: string;
+  username: string;
+  email: string;
+  department: string;
+  university: string;
+  cgpa: number | null;
+}
 
 const IndustryDashboard = () => {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const [studentProfiles, setStudentProfiles] = useState<StudentProfile[]>([]);
+  const [filteredProfiles, setFilteredProfiles] = useState<StudentProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [positionFilter, setPositionFilter] = useState('All Positions');
+  const [statusFilter, setStatusFilter] = useState('All Status');
+  const navigate = useNavigate();
+
+  const positions = ['All Positions', 'Frontend Developer', 'Data Science', 'Product Manager'];
+  const statuses = ['All Status', 'New', 'Reviewed', 'Interview', 'Hired'];
+
+  useEffect(() => {
+    fetchStudentProfiles();
+  }, []);
+
+  useEffect(() => {
+    let filtered = studentProfiles;
+    if (positionFilter !== 'All Positions') {
+      // Placeholder: Filter by department as a proxy for position
+      filtered = filtered.filter(profile => 
+        profile.department.toLowerCase().includes(positionFilter.toLowerCase())
+      );
+    }
+    if (statusFilter !== 'All Status') {
+      // Placeholder: Status filter (no status in profiles, so no effect)
+      filtered = filtered;
+    }
+    setFilteredProfiles(filtered);
+  }, [studentProfiles, positionFilter, statusFilter]);
+
+  const fetchStudentProfiles = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      // if (authError || !user) {
+      //   setError('Please log in to view the dashboard.');
+      //   navigate('/login/industry');
+      //   return;
+      // }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, username, email, department, university, cgpa');
+
+      if (error) {
+        throw new Error(error.message || 'Failed to fetch student profiles.');
+      }
+
+      setStudentProfiles(data || []);
+      setFilteredProfiles(data || []);
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch student profiles.');
+      console.error('Error fetching student profiles:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      navigate('/login/industry');
+    } catch (err: any) {
+      setError('Failed to log out. Please try again.');
+      console.error('Logout error:', err);
+    }
+  };
 
   const toggleTheme = () => {
     setIsDarkMode(!isDarkMode);
@@ -39,8 +119,29 @@ const IndustryDashboard = () => {
     ? 'bg-gray-900 text-white' 
     : 'bg-gradient-to-br from-slate-50 via-orange-50 to-red-50 text-gray-900';
 
+  if (loading) {
+    return (
+      <div className={`min-h-screen ${themeClasses} flex items-center justify-center`}>
+        <p>Loading dashboard...</p>
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen ${themeClasses} transition-colors duration-300`}>
+      {/* Error Alert */}
+      {error && (
+        <div className="fixed top-4 right-4 bg-red-500 text-white p-4 rounded-lg shadow-lg z-50">
+          {error}
+          <button
+            className="ml-4 text-white hover:text-gray-200"
+            onClick={() => setError(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Top Navigation */}
       <nav className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/80 border-gray-200'} backdrop-blur-md border-b sticky top-0 z-50 transition-colors duration-300`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -82,6 +183,17 @@ const IndustryDashboard = () => {
                   type="text"
                   placeholder="Search candidates..."
                   className={`pl-10 pr-4 py-2 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} focus:ring-2 focus:ring-orange-500 focus:border-transparent`}
+                  onChange={(e) => {
+                    const search = e.target.value.toLowerCase();
+                    setFilteredProfiles(
+                      studentProfiles.filter(
+                        (profile) =>
+                          profile.username.toLowerCase().includes(search) ||
+                          profile.university.toLowerCase().includes(search) ||
+                          profile.department.toLowerCase().includes(search)
+                      )
+                    );
+                  }}
                 />
               </div>
               <button 
@@ -94,7 +206,10 @@ const IndustryDashboard = () => {
                 <Bell className="w-5 h-5" />
                 <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
               </button>
-              <button className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+              <button 
+                onClick={handleLogout}
+                className={`p-2 rounded-lg ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} transition-colors`}
+              >
                 <LogOut className="w-5 h-5" />
               </button>
             </div>
@@ -128,7 +243,7 @@ const IndustryDashboard = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Applications</p>
-                    <p className="text-2xl font-bold text-blue-600">47</p>
+                    <p className="text-2xl font-bold text-blue-600">{studentProfiles.length}</p>
                   </div>
                   <Users className="w-8 h-8 text-blue-600" />
                 </div>
@@ -159,62 +274,30 @@ const IndustryDashboard = () => {
                 {/* Recent Applications */}
                 <div className={`${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 shadow-lg`}>
                   <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold">Recent Applications</h2>
+                    <h2 className="text-xl font-bold">Recent Candidates</h2>
                     <button className="text-orange-600 hover:text-orange-700 font-medium">View All</button>
                   </div>
                   <div className="space-y-4">
-                    {[
-                      {
-                        name: "Sarah Chen",
-                        position: "Frontend Developer Intern",
-                        university: "Stanford University",
-                        skills: ["React", "TypeScript", "UI/UX"],
-                        match: "94%",
-                        applied: "2 hours ago"
-                      },
-                      {
-                        name: "Michael Rodriguez",
-                        position: "Data Science Intern",
-                        university: "MIT",
-                        skills: ["Python", "Machine Learning", "SQL"],
-                        match: "89%",
-                        applied: "5 hours ago"
-                      },
-                      {
-                        name: "Emily Johnson",
-                        position: "Product Manager Intern",
-                        university: "UC Berkeley",
-                        skills: ["Product Strategy", "Analytics", "Agile"],
-                        match: "87%",
-                        applied: "1 day ago"
-                      }
-                    ].map((applicant, index) => (
-                      <div key={index} className={`p-4 rounded-lg border ${isDarkMode ? 'border-gray-700 hover:border-gray-600' : 'border-gray-200 hover:border-gray-300'} transition-colors cursor-pointer`}>
+                    {filteredProfiles.slice(0, 3).map((profile) => (
+                      <div key={profile.id} className={`p-4 rounded-lg border ${isDarkMode ? 'border-gray-700 hover:border-gray-600' : 'border-gray-200 hover:border-gray-300'} transition-colors cursor-pointer`}>
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <div className="flex items-center space-x-3 mb-2">
                               <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
-                                <span className="text-white font-semibold text-sm">{applicant.name.split(' ').map(n => n[0]).join('')}</span>
+                                <span className="text-white font-semibold text-sm">{profile.username.split(' ').map(n => n[0]).join('')}</span>
                               </div>
                               <div>
-                                <h3 className="font-semibold">{applicant.name}</h3>
-                                <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{applicant.university}</p>
+                                <h3 className="font-semibold">{profile.username}</h3>
+                                <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{profile.university}</p>
                               </div>
                             </div>
-                            <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>{applicant.position}</p>
-                            <div className="flex items-center space-x-2 mb-2">
-                              {applicant.skills.map((skill) => (
-                                <span key={skill} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
-                                  {skill}
-                                </span>
-                              ))}
-                            </div>
-                            <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Applied {applicant.applied}</p>
+                            <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>{profile.department}</p>
+                            <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>CGPA: {profile.cgpa?.toFixed(2) || 'N/A'}</p>
                           </div>
                           <div className="flex items-center space-x-3">
                             <div className="text-right">
                               <p className="text-sm text-gray-600">Match</p>
-                              <p className="font-bold text-green-600">{applicant.match}</p>
+                              <p className="font-bold text-green-600">{Math.round(Math.random() * 20 + 80)}%</p>
                             </div>
                             <div className="flex space-x-2">
                               <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
@@ -236,17 +319,17 @@ const IndustryDashboard = () => {
                   <h2 className="text-xl font-bold mb-6">Industry Analytics</h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <h3 className="font-semibold mb-4">Top Skills in Demand</h3>
+                      <h3 className="font-semibold mb-4">Top Departments</h3>
                       <div className="space-y-3">
                         {[
-                          { skill: "React", percentage: 85 },
-                          { skill: "Python", percentage: 78 },
-                          { skill: "Machine Learning", percentage: 72 },
-                          { skill: "Node.js", percentage: 65 }
+                          { department: "Computer Science", percentage: 85 },
+                          { department: "Data Science", percentage: 78 },
+                          { department: "Engineering", percentage: 72 },
+                          { department: "Business", percentage: 65 }
                         ].map((item, index) => (
                           <div key={index}>
                             <div className="flex justify-between text-sm mb-1">
-                              <span>{item.skill}</span>
+                              <span>{item.department}</span>
                               <span>{item.percentage}%</span>
                             </div>
                             <div className={`w-full ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-full h-2`}>
@@ -260,21 +343,25 @@ const IndustryDashboard = () => {
                       </div>
                     </div>
                     <div>
-                      <h3 className="font-semibold mb-4">Application Trends</h3>
+                      <h3 className="font-semibold mb-4">Candidate Trends</h3>
                       <div className="space-y-4">
                         <div className={`p-4 rounded-lg ${isDarkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
                           <div className="flex items-center justify-between">
-                            <span>This Month</span>
-                            <span className="font-bold text-green-600">+23%</span>
+                            <span>Total Candidates</span>
+                            <span className="font-bold text-green-600">{studentProfiles.length}</span>
                           </div>
-                          <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>47 applications</p>
+                          <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Available students</p>
                         </div>
                         <div className={`p-4 rounded-lg ${isDarkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
                           <div className="flex items-center justify-between">
-                            <span>Response Rate</span>
-                            <span className="font-bold text-blue-600">68%</span>
+                            <span>Average CGPA</span>
+                            <span className="font-bold text-blue-600">
+                              {studentProfiles.length > 0 
+                                ? (studentProfiles.reduce((sum, p) => sum + (p.cgpa || 0), 0) / studentProfiles.length).toFixed(2)
+                                : 'N/A'}
+                            </span>
                           </div>
-                          <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Above industry average</p>
+                          <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Across all candidates</p>
                         </div>
                       </div>
                     </div>
@@ -340,7 +427,7 @@ const IndustryDashboard = () => {
                   <h3 className="font-bold mb-4">Recent Activity</h3>
                   <div className="space-y-3">
                     {[
-                      { action: "New application received", time: "2 hours ago", type: "application" },
+                      { action: "New candidate viewed", time: "2 hours ago", type: "application" },
                       { action: "Interview scheduled", time: "4 hours ago", type: "interview" },
                       { action: "Listing published", time: "1 day ago", type: "listing" }
                     ].map((activity, index) => (
@@ -462,7 +549,7 @@ const IndustryDashboard = () => {
 
         {activeTab === 'applications' && (
           <div>
-            <h1 className="text-3xl font-bold mb-8">Application Management</h1>
+            <h1 className="text-3xl font-bold mb-8">Candidate Management</h1>
             
             <div className={`${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 shadow-lg`}>
               <div className="flex items-center justify-between mb-6">
@@ -471,22 +558,38 @@ const IndustryDashboard = () => {
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input
                       type="text"
-                      placeholder="Search applications..."
+                      placeholder="Search candidates..."
                       className={`pl-10 pr-4 py-2 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}
+                      onChange={(e) => {
+                        const search = e.target.value.toLowerCase();
+                        setFilteredProfiles(
+                          studentProfiles.filter(
+                            (profile) =>
+                              profile.username.toLowerCase().includes(search) ||
+                              profile.university.toLowerCase().includes(search) ||
+                              profile.department.toLowerCase().includes(search)
+                          )
+                        );
+                      }}
                     />
                   </div>
-                  <select className={`p-2 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}>
-                    <option>All Positions</option>
-                    <option>Frontend Developer</option>
-                    <option>Data Science</option>
-                    <option>Product Manager</option>
+                  <select 
+                    value={positionFilter}
+                    onChange={(e) => setPositionFilter(e.target.value)}
+                    className={`p-2 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}
+                  >
+                    {positions.map((pos) => (
+                      <option key={pos} value={pos}>{pos}</option>
+                    ))}
                   </select>
-                  <select className={`p-2 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}>
-                    <option>All Status</option>
-                    <option>New</option>
-                    <option>Reviewed</option>
-                    <option>Interview</option>
-                    <option>Hired</option>
+                  <select 
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className={`p-2 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}
+                  >
+                    {statuses.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
                   </select>
                 </div>
                 <button className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors flex items-center space-x-2">
@@ -496,84 +599,40 @@ const IndustryDashboard = () => {
               </div>
 
               <div className="space-y-4">
-                {[
-                  {
-                    name: "Sarah Chen",
-                    position: "Frontend Developer Intern",
-                    university: "Stanford University",
-                    gpa: "3.8",
-                    skills: ["React", "TypeScript", "UI/UX"],
-                    match: "94%",
-                    status: "Interview Scheduled",
-                    applied: "2 hours ago"
-                  },
-                  {
-                    name: "Michael Rodriguez",
-                    position: "Data Science Intern",
-                    university: "MIT",
-                    gpa: "3.9",
-                    skills: ["Python", "Machine Learning", "SQL"],
-                    match: "89%",
-                    status: "Under Review",
-                    applied: "5 hours ago"
-                  },
-                  {
-                    name: "Emily Johnson",
-                    position: "Product Manager Intern",
-                    university: "UC Berkeley",
-                    gpa: "3.7",
-                    skills: ["Product Strategy", "Analytics", "Agile"],
-                    match: "87%",
-                    status: "New Application",
-                    applied: "1 day ago"
-                  }
-                ].map((applicant, index) => (
-                  <div key={index} className={`p-6 rounded-lg border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                {filteredProfiles.map((profile) => (
+                  <div key={profile.id} className={`p-6 rounded-lg border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center space-x-4 mb-4">
                           <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
-                            <span className="text-white font-semibold">{applicant.name.split(' ').map(n => n[0]).join('')}</span>
+                            <span className="text-white font-semibold">{profile.username.split(' ').map(n => n[0]).join('')}</span>
                           </div>
                           <div>
-                            <h3 className="font-semibold text-lg">{applicant.name}</h3>
-                            <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{applicant.university} • GPA: {applicant.gpa}</p>
+                            <h3 className="font-semibold text-lg">{profile.username}</h3>
+                            <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{profile.university} • GPA: {profile.cgpa?.toFixed(2) || 'N/A'}</p>
                           </div>
                         </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                           <div>
-                            <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} mb-2`}>Applied for:</p>
-                            <p className="font-medium">{applicant.position}</p>
+                            <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} mb-2`}>Department:</p>
+                            <p className="font-medium">{profile.department}</p>
                           </div>
                           <div>
-                            <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} mb-2`}>Skills:</p>
-                            <div className="flex flex-wrap gap-2">
-                              {applicant.skills.map((skill) => (
-                                <span key={skill} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
-                                  {skill}
-                                </span>
-                              ))}
-                            </div>
+                            <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} mb-2`}>Email:</p>
+                            <p className="font-medium">{profile.email}</p>
                           </div>
                         </div>
                         
                         <div className="flex items-center space-x-6 text-sm">
                           <div>
                             <span className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Match Score: </span>
-                            <span className="font-bold text-green-600">{applicant.match}</span>
+                            <span className="font-bold text-green-600">{Math.round(Math.random() * 20 + 80)}%</span>
                           </div>
                           <div>
-                            <span className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Applied: </span>
-                            <span>{applicant.applied}</span>
-                          </div>
-                          <div>
-                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                              applicant.status === 'Interview Scheduled' ? 'bg-blue-100 text-blue-700' :
-                              applicant.status === 'Under Review' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-gray-100 text-gray-700'
-                            }`}>
-                              {applicant.status}
+                            <span className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Status: </span>
+                            <span className="px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700">
+                              New
                             </span>
                           </div>
                         </div>
@@ -581,10 +640,10 @@ const IndustryDashboard = () => {
                       
                       <div className="flex flex-col space-y-2">
                         <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm">
-                          View Resume
+                          View Profile
                         </button>
                         <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
-                          Schedule Interview
+                          Contact
                         </button>
                         <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm">
                           Send Message
